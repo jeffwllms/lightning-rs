@@ -3,8 +3,9 @@
 # TODO: extract relevant bits from this into docs once I stabilize it a bit.
 # TODO: site configurations and templating are closely connected. Hmmmm.
 
-# You can specify multiple content directories if it's convenient.
-content_directories = ["content"]
+# You can specify multiple content directories if it's convenient. In that
+# case, you can use ["content"] instead.
+content_directories = "content"
 
 # Layout will live in a single directory. It should
-layout = "layout"
+template_directory = "layout"

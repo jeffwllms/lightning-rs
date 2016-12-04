@@ -1,13 +1,14 @@
 //! Generate the site content.
 
 // Standard library
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
 // Third party
 use glob::glob;
 use pandoc::{Pandoc, PandocOption, PandocOutput, InputFormat, OutputFormat, OutputKind};
+use toml;
 
 // First party
 use syntax_highlighting::syntax_highlight;
@@ -15,7 +16,6 @@ use syntax_highlighting::syntax_highlight;
 
 pub struct Site {
     pub source_directory: PathBuf,
-    pub template_directory: Option<PathBuf>,
 }
 
 
@@ -73,13 +73,15 @@ pub fn generate(site: Site) -> Result<(), String> {
             .join(ff_path.file_name().ok_or(format!("invalid file: {}", file_name))?)
             .with_extension("html");
 
-        let mut fd = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(dest.clone())
-            .map_err(|reason| {
-                format!("Could not open {} for write: {}", dest.to_string_lossy(), reason)
-            })?;
+        let mut fd = match File::create(dest.clone()) {
+            Ok(file) => file,
+            Err(reason) => {
+                return Err(format!(
+                    "Could not open {} for write: {}",
+                    dest.to_string_lossy(), reason
+                ));
+            }
+        };
 
         let result = write!(fd, "{}", highlighted);
         if let Err(reason) = result {
@@ -90,8 +92,97 @@ pub fn generate(site: Site) -> Result<(), String> {
     Ok(())
 }
 
-struct Config {}
+const CONTENT_DIRECTORIES: &'static str = "content_directories";
+const TEMPLATE_DIRECTORY: &'static str = "template_directory";
 
-fn load_config(directory: &PathBuf) -> Config {
-    unimplemented!()
+struct Config {
+    content_directories: Vec<PathBuf>,
+    template_directory: PathBuf,
+}
+
+fn load_config(directory: &PathBuf) -> Result<Config, String> {
+    const CONFIG_FILE: &'static str = "lightning.toml";
+    let config_path = directory.join(CONFIG_FILE);
+    if !config_path.exists() {
+        return Err(format!(
+            "The specified configuration path {:?} does not exist",
+            config_path.to_string_lossy()
+        ));
+    }
+
+    let mut file = File::open(&config_path)
+        .map_err(|reason| format!("Error reading {:?}: {:?}", config_path, reason))?;
+
+    let mut contents = String::new();
+    file.read_to_string(&mut contents);
+
+    let mut parser = toml::Parser::new(&contents);
+    let parsed_table = match parser.parse() {
+        Some(table) => table,
+        None => {
+            return Err(format!(
+                "Could not parse the contents of {} as TOML. Errors include:\n{}",
+                config_path.to_string_lossy(),
+                parser.errors.into_iter()
+                    .map(|err| format!("{}", err))
+                    .collect::<Vec<String>>()
+                    .join("\n")
+            ));
+        }
+    };
+
+    // TODO: extract conversion of parsed table to values into a testable function.
+    use toml::Value;
+    let content_directories = match parsed_table.get(CONTENT_DIRECTORIES) {
+        Some(&Value::Array(ref values)) => {
+            values.into_iter()
+                .map(|value| {
+                    match value {
+                        &Value::String(ref string) => Some(PathBuf::from(string)),
+                        _ => None,
+                    }
+                })
+                .filter(|option| option.is_some())
+                .map(|known_valid| known_valid.unwrap())
+                .collect::<Vec<PathBuf>>()
+        },
+        Some(&Value::String(ref string)) => vec![PathBuf::from(string)],
+        Some(_) => {
+            return Err(format!(
+                "Wrong value type at key {} in configuration file {}",
+                TEMPLATE_DIRECTORY,
+                config_path.to_string_lossy(),
+            ));
+        },
+        None => {
+            return Err(format!(
+                "Could not load value from key {} in configuration file {}",
+                CONTENT_DIRECTORIES,
+                config_path.to_string_lossy(),
+            ));
+        },
+    };
+
+    let template_directory = match parsed_table.get(TEMPLATE_DIRECTORY) {
+        Some(&Value::String(ref string)) => PathBuf::from(string),
+        Some(_) => {
+            return Err(format!(
+                "Wrong value type at key {} in configuration file {}",
+                TEMPLATE_DIRECTORY,
+                config_path.to_string_lossy(),
+            ));
+        },
+        None => {
+            return Err(format!(
+                "Could not load value from key {} in configuration file {}",
+                TEMPLATE_DIRECTORY,
+                config_path.to_string_lossy(),
+            ));
+        },
+    };
+
+    Ok(Config {
+        content_directories: content_directories,
+        template_directory: template_directory,
+    })
 }
