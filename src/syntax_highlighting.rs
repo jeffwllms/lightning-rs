@@ -10,7 +10,7 @@ use std::str;
 // Third party
 use quick_xml::{XmlReader, XmlWriter, Element, Event};
 use syntect::html::highlighted_snippet_for_string;
-use syntect::highlighting::ThemeSet;
+use syntect::highlighting::Theme;
 use syntect::parsing::{SyntaxDefinition, SyntaxSet};
 
 
@@ -155,7 +155,7 @@ struct Accumulator {
 /// Note that any `html_string` will do; if it cannot be parsed as XML, it will
 /// simply be returned unchanged; and if there are no code blocks to highlight,
 /// it will also be returned unchanged.
-pub fn syntax_highlight(html_string: String) -> String {
+pub fn syntax_highlight(html_string: String, theme: &Theme) -> String {
     let original_string = html_string.clone();
     let reader = XmlReader::from(html_string.as_str());
 
@@ -199,7 +199,7 @@ pub fn syntax_highlight(html_string: String) -> String {
             Err(_) => {
                 assert!(acc.writer.write(event.clone()).is_ok());
                 return acc;
-            },
+            }
         };
 
         let syntax_key = language.clone();
@@ -209,15 +209,12 @@ pub fn syntax_highlight(html_string: String) -> String {
                 None => {
                     assert!(acc.writer.write(event.clone()).is_ok());
                     return acc;
-                },
+                }
             }
         });
 
-        let highlighted = highlighted_snippet_for_string(
-            content_to_highlight,
-            syntax_definition,
-            &ThemeSet::load_defaults().themes["base16-eighties.dark"]
-        );
+        let highlighted =
+            highlighted_snippet_for_string(content_to_highlight, syntax_definition, &theme);
 
         let text = Element::new(highlighted);
         assert!(acc.writer.write(Event::Text(text)).is_ok());
@@ -239,55 +236,35 @@ mod tests {
 
         let lang = "rust";
 
-        assert_eq!(
-            ParseState::NotInBlock.next(ParseEvent::StartPre(Some(lang.to_string()))),
-            ParseState::MaybeStartBlock(lang.to_string())
-        );
+        assert_eq!(ParseState::NotInBlock.next(ParseEvent::StartPre(Some(lang.to_string()))),
+                   ParseState::MaybeStartBlock(lang.to_string()));
 
-        assert_eq!(
-            ParseState::NotInBlock.next(ParseEvent::EndCode),
-            ParseState::NotInBlock
-        );
+        assert_eq!(ParseState::NotInBlock.next(ParseEvent::EndCode),
+                   ParseState::NotInBlock);
 
-        assert_eq!(
-            ParseState::NotInBlock.next(ParseEvent::Other),
-            ParseState::NotInBlock
-        );
+        assert_eq!(ParseState::NotInBlock.next(ParseEvent::Other),
+                   ParseState::NotInBlock);
 
-        assert_eq!(
-            ParseState::NotInBlock.next(ParseEvent::StartCode),
-            ParseState::NotInBlock
-        );
+        assert_eq!(ParseState::NotInBlock.next(ParseEvent::StartCode),
+                   ParseState::NotInBlock);
 
-        assert_eq!(
-            ParseState::MaybeStartBlock(lang.to_string()).next(ParseEvent::StartCode),
-            ParseState::WillStartCodeBlock(lang.to_string())
-        );
+        assert_eq!(ParseState::MaybeStartBlock(lang.to_string()).next(ParseEvent::StartCode),
+                   ParseState::WillStartCodeBlock(lang.to_string()));
 
-        assert_eq!(
-            ParseState::MaybeStartBlock(lang.to_string()).next(ParseEvent::Text),
-            ParseState::NotInBlock
-        );
+        assert_eq!(ParseState::MaybeStartBlock(lang.to_string()).next(ParseEvent::Text),
+                   ParseState::NotInBlock);
 
-        assert_eq!(
-            ParseState::MaybeStartBlock(lang.to_string()).next(ParseEvent::EndCode),
-            ParseState::NotInBlock
-        );
+        assert_eq!(ParseState::MaybeStartBlock(lang.to_string()).next(ParseEvent::EndCode),
+                   ParseState::NotInBlock);
 
-        assert_eq!(
-            ParseState::MaybeStartBlock(lang.to_string())
-                .next(ParseEvent::StartPre(Some(lang.to_string()))),
-            ParseState::NotInBlock
-        );
+        assert_eq!(ParseState::MaybeStartBlock(lang.to_string())
+                       .next(ParseEvent::StartPre(Some(lang.to_string()))),
+                   ParseState::NotInBlock);
 
-        assert_eq!(
-            ParseState::MaybeStartBlock(lang.to_string()).next(ParseEvent::Other),
-            ParseState::NotInBlock
-        );
+        assert_eq!(ParseState::MaybeStartBlock(lang.to_string()).next(ParseEvent::Other),
+                   ParseState::NotInBlock);
 
-        assert_eq!(
-            ParseState::WillStartCodeBlock(lang.to_string()).next(ParseEvent::Text),
-            ParseState::InCodeBlock(lang.to_string())
-        );
+        assert_eq!(ParseState::WillStartCodeBlock(lang.to_string()).next(ParseEvent::Text),
+                   ParseState::InCodeBlock(lang.to_string()));
     }
 }
